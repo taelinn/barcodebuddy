@@ -4,3 +4,5 @@ data/config.php
 data/users.db
 /vendor/
 .idea
+.claude/
+CLAUDE.md
