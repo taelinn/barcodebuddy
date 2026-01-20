@@ -154,6 +154,91 @@
         "summary": "Returns all special barcodes"
       }
     },
+    "/system/unknownbarcodes": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "count": {
+                          "format": "int32",
+                          "type": "integer",
+                          "description": "Number of unknown barcodes"
+                        },
+                        "barcodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "barcode": {
+                                "type": "string",
+                                "description": "The barcode value"
+                              },
+                              "amount": {
+                                "format": "int32",
+                                "type": "integer",
+                                "description": "Number of times this barcode was scanned"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "count": 2,
+                    "barcodes": [
+                      {
+                        "barcode": "TEST123",
+                        "amount": 1
+                      },
+                      {
+                        "barcode": "5061060344584",
+                        "amount": 7
+                      }
+                    ]
+                  },
+                  "result": {
+                    "result": "OK",
+                    "http_code": 200
+                  }
+                }
+              }
+            },
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "apikey": []
+          }
+        ],
+        "summary": "Returns all unknown barcodes with their scanned amounts"
+      }
+    },
     "/state/getmode": {
       "description": "STATE_CONSUME         = 0;\nSTATE_CONSUME_SPOILED = 1;\nSTATE_PURCHASE        = 2;\nSTATE_OPEN            = 3;\nSTATE_GETSTOCK        = 4;\nSTATE_ADD_SL          = 5;",
       "get": {

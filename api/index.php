@@ -188,6 +188,21 @@ class BBuddyApi {
                 "version_int" => BB_VERSION
             ));
         }));
+
+        $this->addRoute(new ApiRoute("/system/unknownbarcodes", function () {
+            $barcodes = DatabaseConnection::getInstance()->getStoredBarcodes();
+            $unknownBarcodes = $barcodes["unknown"];
+
+            return self::createResultArray(array(
+                "count" => count($unknownBarcodes),
+                "barcodes" => array_map(function($item) {
+                    return array(
+                        "barcode" => $item['barcode'],
+                        "amount" => $item['amount']
+                    );
+                }, $unknownBarcodes)
+            ));
+        }));
     }
 
 
