@@ -159,6 +159,18 @@
         "tags": [
           "system"
         ],
+        "parameters": [
+          {
+            "name": "lookup",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false", "1", "0"]
+            },
+            "description": "If 'true' or '1', performs Open Food Facts lookup for each barcode and includes product_info in response"
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -187,6 +199,28 @@
                                 "format": "int32",
                                 "type": "integer",
                                 "description": "Number of times this barcode was scanned"
+                              },
+                              "product_info": {
+                                "type": "object",
+                                "nullable": true,
+                                "description": "Product info from Open Food Facts (only present when lookup=true)",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Product name"
+                                  },
+                                  "brand": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Brand name"
+                                  },
+                                  "image_url": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "URL to product image"
+                                  }
+                                }
                               }
                             }
                           }
@@ -207,23 +241,56 @@
                     }
                   }
                 },
-                "example": {
-                  "data": {
-                    "count": 2,
-                    "barcodes": [
-                      {
-                        "barcode": "TEST123",
-                        "amount": 1
+                "examples": {
+                  "without_lookup": {
+                    "summary": "Response without lookup",
+                    "value": {
+                      "data": {
+                        "count": 2,
+                        "barcodes": [
+                          {
+                            "barcode": "TEST123",
+                            "amount": 1
+                          },
+                          {
+                            "barcode": "5061060344584",
+                            "amount": 7
+                          }
+                        ]
                       },
-                      {
-                        "barcode": "5061060344584",
-                        "amount": 7
+                      "result": {
+                        "result": "OK",
+                        "http_code": 200
                       }
-                    ]
+                    }
                   },
-                  "result": {
-                    "result": "OK",
-                    "http_code": 200
+                  "with_lookup": {
+                    "summary": "Response with lookup=true",
+                    "value": {
+                      "data": {
+                        "count": 2,
+                        "barcodes": [
+                          {
+                            "barcode": "TEST123",
+                            "amount": 1,
+                            "product_info": null
+                          },
+                          {
+                            "barcode": "5061060344584",
+                            "amount": 7,
+                            "product_info": {
+                              "name": "Organic Olive Oil",
+                              "brand": "Example Brand",
+                              "image_url": "https://images.openfoodfacts.org/images/products/example.jpg"
+                            }
+                          }
+                        ]
+                      },
+                      "result": {
+                        "result": "OK",
+                        "http_code": 200
+                      }
+                    }
                   }
                 }
               }
@@ -236,7 +303,7 @@
             "apikey": []
           }
         ],
-        "summary": "Returns all unknown barcodes with their scanned amounts"
+        "summary": "Returns all unknown barcodes with their scanned amounts. Optionally includes Open Food Facts product lookup."
       }
     },
     "/state/getmode": {
@@ -522,6 +589,564 @@
           }
         ],
         "summary": "Passes a barcode to Barcode Buddy"
+      }
+    },
+    "/action/deleteunknown": {
+      "post": {
+        "tags": [
+          "action"
+        ],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "barcode": {
+                    "type": "string",
+                    "description": "The barcode to remove from the unknown list"
+                  }
+                },
+                "required": [
+                  "barcode"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Barcode deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deleted": {
+                          "type": "boolean",
+                          "description": "True if the barcode was deleted"
+                        }
+                      }
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": {
+                      "deleted": true
+                    },
+                    "result": {
+                      "result": "OK",
+                      "http_code": 200
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error if no barcode supplied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": null,
+                    "result": {
+                      "result": "No barcode supplied",
+                      "http_code": 400
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Barcode not found in unknown list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": null,
+                    "result": {
+                      "result": "Barcode not found in unknown list",
+                      "http_code": 404
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apikey": []
+          }
+        ],
+        "summary": "Removes a barcode from the unknown list"
+      }
+    },
+    "/action/associatebarcode": {
+      "post": {
+        "tags": [
+          "action"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "barcode": {
+                    "type": "string",
+                    "description": "The barcode to associate with a Grocy product"
+                  },
+                  "product_id": {
+                    "type": "integer",
+                    "description": "The Grocy product ID to associate the barcode with"
+                  }
+                },
+                "required": [
+                  "barcode",
+                  "product_id"
+                ]
+              },
+              "example": {
+                "barcode": "5061060344584",
+                "product_id": 123
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Barcode associated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "barcode": {
+                          "type": "string",
+                          "description": "The barcode that was associated"
+                        },
+                        "product_id": {
+                          "type": "integer",
+                          "description": "The Grocy product ID"
+                        },
+                        "product_name": {
+                          "type": "string",
+                          "description": "The name of the Grocy product"
+                        },
+                        "stock_added": {
+                          "type": "integer",
+                          "description": "Amount of stock added to Grocy"
+                        }
+                      }
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": {
+                      "barcode": "5061060344584",
+                      "product_id": 123,
+                      "product_name": "Olive Oil",
+                      "stock_added": 7
+                    },
+                    "result": {
+                      "result": "OK",
+                      "http_code": 200
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": null,
+                    "result": {
+                      "result": "No barcode supplied",
+                      "http_code": 400
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Barcode or product not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": null,
+                    "result": {
+                      "result": "Barcode not found in unknown list",
+                      "http_code": 404
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Failed to add barcode to Grocy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": null,
+                    "result": {
+                      "result": "Failed to add barcode to Grocy: error details",
+                      "http_code": 500
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apikey": []
+          }
+        ],
+        "summary": "Associates an unknown barcode with an existing Grocy product and adds the scanned quantity to stock"
+      }
+    },
+    "/action/createandassociate": {
+      "post": {
+        "tags": [
+          "action"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "barcode": {
+                    "type": "string",
+                    "description": "The barcode to associate with the new product"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Name for the new Grocy product"
+                  },
+                  "product_group_id": {
+                    "type": "integer",
+                    "description": "Optional Grocy product group ID"
+                  },
+                  "location_id": {
+                    "type": "integer",
+                    "description": "Optional Grocy location ID"
+                  }
+                },
+                "required": [
+                  "barcode",
+                  "name"
+                ]
+              },
+              "example": {
+                "barcode": "5061060344584",
+                "name": "Organic Olive Oil",
+                "product_group_id": 5,
+                "location_id": 1
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Product created and barcode associated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "barcode": {
+                          "type": "string",
+                          "description": "The barcode that was associated"
+                        },
+                        "product_id": {
+                          "type": "integer",
+                          "description": "The newly created Grocy product ID"
+                        },
+                        "product_name": {
+                          "type": "string",
+                          "description": "The name of the new product"
+                        },
+                        "stock_added": {
+                          "type": "integer",
+                          "description": "Amount of stock added to Grocy"
+                        }
+                      }
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": {
+                      "barcode": "5061060344584",
+                      "product_id": 456,
+                      "product_name": "Organic Olive Oil",
+                      "stock_added": 7
+                    },
+                    "result": {
+                      "result": "OK",
+                      "http_code": 200
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": null,
+                    "result": {
+                      "result": "No product name supplied",
+                      "http_code": 400
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Barcode not found in unknown list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": null,
+                    "result": {
+                      "result": "Barcode not found in unknown list",
+                      "http_code": 404
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Failed to create product in Grocy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "result": {
+                          "type": "string"
+                        },
+                        "http_code": {
+                          "format": "int32",
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data": null,
+                    "result": {
+                      "result": "Failed to create product in Grocy: error details",
+                      "http_code": 500
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apikey": []
+          }
+        ],
+        "summary": "Creates a new Grocy product and associates the barcode with it, adding the scanned quantity to stock"
       }
     }
   },

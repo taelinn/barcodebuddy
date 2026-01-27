@@ -605,6 +605,19 @@ class DatabaseConnection {
         $this->db->exec("DELETE FROM Barcodes WHERE id='$id'");
     }
 
+    /**
+     * Delete an unknown barcode by its barcode value
+     * Only deletes if the barcode exists and is unknown (name = 'N/A')
+     *
+     * @param string $barcode The barcode value to delete
+     * @return bool True if a barcode was deleted, false otherwise
+     */
+    public function deleteUnknownBarcode(string $barcode): bool {
+        $barcode = SQLite3::escapeString($barcode);
+        $this->db->exec("DELETE FROM Barcodes WHERE barcode='$barcode' AND name='N/A'");
+        return $this->db->changes() > 0;
+    }
+
 
     /**
      * Delete all saved barcodes

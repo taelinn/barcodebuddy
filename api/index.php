@@ -193,14 +193,215 @@ class BBuddyApi {
             $barcodes = DatabaseConnection::getInstance()->getStoredBarcodes();
             $unknownBarcodes = $barcodes["unknown"];
 
+            // Check if lookup parameter is set
+            $doLookup = false;
+            if (isset($_GET["lookup"]) && ($_GET["lookup"] === "true" || $_GET["lookup"] === "1"))
+                $doLookup = true;
+
             return self::createResultArray(array(
                 "count" => count($unknownBarcodes),
-                "barcodes" => array_map(function($item) {
-                    return array(
+                "barcodes" => array_map(function($item) use ($doLookup) {
+                    $result = array(
                         "barcode" => $item['barcode'],
                         "amount" => $item['amount']
                     );
+
+                    if ($doLookup) {
+                        $result["product_info"] = self::lookupOpenFoodFacts($item['barcode']);
+                    }
+
+                    return $result;
                 }, $unknownBarcodes)
+            ));
+        }));
+
+        $this->addRoute(new ApiRoute("/action/deleteunknown", function () {
+            $barcode = null;
+            if (isset($_GET["barcode"]))
+                $barcode = $_GET["barcode"];
+            if (isset($_POST["barcode"]))
+                $barcode = $_POST["barcode"];
+
+            if ($barcode === null || $barcode === "")
+                return self::createResultArray(null, "No barcode supplied", 400);
+
+            $deleted = DatabaseConnection::getInstance()->deleteUnknownBarcode(sanitizeString($barcode));
+
+            if ($deleted) {
+                return self::createResultArray(array("deleted" => true));
+            } else {
+                return self::createResultArray(null, "Barcode not found in unknown list", 404);
+            }
+        }));
+
+        $this->addRoute(new ApiRoute("/action/associatebarcode", function () {
+            // Get parameters from POST body (JSON) or form data
+            $barcode = null;
+            $productId = null;
+
+            // Try JSON body first
+            $jsonBody = file_get_contents('php://input');
+            if ($jsonBody) {
+                $jsonData = json_decode($jsonBody, true);
+                if ($jsonData) {
+                    $barcode = $jsonData['barcode'] ?? null;
+                    $productId = $jsonData['product_id'] ?? null;
+                }
+            }
+
+            // Fall back to POST/GET params
+            if ($barcode === null && isset($_POST["barcode"]))
+                $barcode = $_POST["barcode"];
+            if ($productId === null && isset($_POST["product_id"]))
+                $productId = $_POST["product_id"];
+
+            // Validate required params
+            if ($barcode === null || $barcode === "")
+                return self::createResultArray(null, "No barcode supplied", 400);
+            if ($productId === null || !is_numeric($productId))
+                return self::createResultArray(null, "No valid product_id supplied", 400);
+
+            $barcode = sanitizeString($barcode);
+            $productId = intval($productId);
+
+            // Check barcode exists in unknown list and get its amount
+            $db = DatabaseConnection::getInstance();
+            $storedAmount = $db->getStoredBarcodeAmount($barcode);
+            if ($storedAmount == 0) {
+                // Check if barcode exists but with 0 amount (shouldn't happen, but check anyway)
+                if (!$db->isUnknownBarcodeAlreadyStored($barcode)) {
+                    return self::createResultArray(null, "Barcode not found in unknown list", 404);
+                }
+            }
+
+            // Verify product exists in Grocy
+            $productInfo = API::getProductInfo($productId);
+            if ($productInfo === null)
+                return self::createResultArray(null, "Product not found in Grocy", 404);
+
+            // Add barcode to Grocy product
+            try {
+                API::addBarcode($productId, $barcode, null);
+            } catch (Exception $e) {
+                return self::createResultArray(null, "Failed to add barcode to Grocy: " . $e->getMessage(), 500);
+            }
+
+            // Add stock if amount > 0
+            $stockAdded = 0;
+            if ($storedAmount > 0) {
+                try {
+                    API::purchaseProduct($productId, floatval($storedAmount));
+                    $stockAdded = $storedAmount;
+                } catch (Exception $e) {
+                    // Log but don't fail - barcode was already associated
+                    $db->saveLog("Warning: Barcode associated but stock add failed: " . $e->getMessage(), false, true);
+                }
+            }
+
+            // Delete from unknown list
+            $db->deleteUnknownBarcode($barcode);
+
+            return self::createResultArray(array(
+                "barcode" => $barcode,
+                "product_id" => $productId,
+                "product_name" => $productInfo->name,
+                "stock_added" => $stockAdded
+            ));
+        }));
+
+        $this->addRoute(new ApiRoute("/action/createandassociate", function () {
+            // Get parameters from POST body (JSON)
+            $barcode = null;
+            $name = null;
+            $productGroupId = null;
+            $locationId = null;
+
+            // Parse JSON body
+            $jsonBody = file_get_contents('php://input');
+            if ($jsonBody) {
+                $jsonData = json_decode($jsonBody, true);
+                if ($jsonData) {
+                    $barcode = $jsonData['barcode'] ?? null;
+                    $name = $jsonData['name'] ?? null;
+                    $productGroupId = $jsonData['product_group_id'] ?? null;
+                    $locationId = $jsonData['location_id'] ?? null;
+                }
+            }
+
+            // Validate required params
+            if ($barcode === null || $barcode === "")
+                return self::createResultArray(null, "No barcode supplied", 400);
+            if ($name === null || $name === "")
+                return self::createResultArray(null, "No product name supplied", 400);
+
+            $barcode = sanitizeString($barcode);
+            $name = sanitizeString($name);
+
+            // Check barcode exists in unknown list and get its amount
+            $db = DatabaseConnection::getInstance();
+            $storedAmount = $db->getStoredBarcodeAmount($barcode);
+            if ($storedAmount == 0) {
+                if (!$db->isUnknownBarcodeAlreadyStored($barcode)) {
+                    return self::createResultArray(null, "Barcode not found in unknown list", 404);
+                }
+            }
+
+            // Build product data for Grocy
+            $productData = array(
+                "name" => $name,
+                "active" => 1
+            );
+
+            if ($locationId !== null && is_numeric($locationId)) {
+                $productData["location_id"] = intval($locationId);
+            }
+
+            if ($productGroupId !== null && is_numeric($productGroupId)) {
+                $productData["product_group_id"] = intval($productGroupId);
+            }
+
+            // Create product in Grocy
+            $newProductId = null;
+            try {
+                $curl = new CurlGenerator(API_O_PRODUCTS, METHOD_POST, json_encode($productData));
+                $result = $curl->execute(true);
+                if (isset($result["created_object_id"])) {
+                    $newProductId = intval($result["created_object_id"]);
+                } else {
+                    return self::createResultArray(null, "Failed to create product in Grocy: no ID returned", 500);
+                }
+            } catch (Exception $e) {
+                return self::createResultArray(null, "Failed to create product in Grocy: " . $e->getMessage(), 500);
+            }
+
+            // Add barcode to the new product
+            try {
+                API::addBarcode($newProductId, $barcode, null);
+            } catch (Exception $e) {
+                // Product was created but barcode add failed - log but continue
+                $db->saveLog("Warning: Product created but barcode add failed: " . $e->getMessage(), false, true);
+            }
+
+            // Add stock if amount > 0
+            $stockAdded = 0;
+            if ($storedAmount > 0) {
+                try {
+                    API::purchaseProduct($newProductId, floatval($storedAmount));
+                    $stockAdded = $storedAmount;
+                } catch (Exception $e) {
+                    // Log but don't fail
+                    $db->saveLog("Warning: Product created but stock add failed: " . $e->getMessage(), false, true);
+                }
+            }
+
+            // Delete from unknown list
+            $db->deleteUnknownBarcode($barcode);
+
+            return self::createResultArray(array(
+                "barcode" => $barcode,
+                "product_id" => $newProductId,
+                "product_name" => $name,
+                "stock_added" => $stockAdded
             ));
         }));
     }
@@ -214,6 +415,60 @@ class BBuddyApi {
         http_response_code($result);
         echo trim(json_encode($data, JSON_HEX_QUOT));
         die();
+    }
+
+    /**
+     * Lookup a barcode on Open Food Facts and return product info
+     * @param string $barcode The barcode to lookup
+     * @return array|null Product info array or null if not found
+     */
+    static function lookupOpenFoodFacts(string $barcode): ?array {
+        $url = "https://world.openfoodfacts.org/api/v0/product/" . urlencode($barcode) . ".json";
+
+        try {
+            $curl = new CurlGenerator($url, METHOD_GET, null, null, true);
+            $result = $curl->execute(true);
+        } catch (Exception $e) {
+            return null;
+        }
+
+        if (!isset($result["status"]) || $result["status"] !== 1) {
+            return null;
+        }
+
+        $product = $result["product"] ?? array();
+
+        // Extract product name (try language-specific first, then generic)
+        $name = null;
+        if (!empty($product["product_name_en"])) {
+            $name = $product["product_name_en"];
+        } elseif (!empty($product["product_name"])) {
+            $name = $product["product_name"];
+        } elseif (!empty($product["generic_name"])) {
+            $name = $product["generic_name"];
+        }
+
+        // Extract brand
+        $brand = $product["brands"] ?? null;
+
+        // Extract image URL (prefer front image)
+        $imageUrl = null;
+        if (!empty($product["image_front_url"])) {
+            $imageUrl = $product["image_front_url"];
+        } elseif (!empty($product["image_url"])) {
+            $imageUrl = $product["image_url"];
+        }
+
+        // Return null if no useful info found
+        if ($name === null && $brand === null && $imageUrl === null) {
+            return null;
+        }
+
+        return array(
+            "name" => $name,
+            "brand" => $brand,
+            "image_url" => $imageUrl
+        );
     }
 
 }
