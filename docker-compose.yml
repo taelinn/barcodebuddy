@@ -12,6 +12,8 @@ services:
       - ./config:/config
     environment:
       - TZ=UTC
+      - PUID=1000
+      - PGID=1000
       # Set these in .env file or uncomment and configure:
       # - GROCY_API_URL=http://your-grocy-instance:9283/api
       # - GROCY_API_KEY=your_grocy_api_key

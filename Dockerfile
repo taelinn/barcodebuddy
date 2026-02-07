@@ -59,6 +59,10 @@ COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/default.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
 
+# Copy and set up entrypoint script
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Set working directory
 WORKDIR /app/bbuddy
 
@@ -68,5 +72,6 @@ EXPOSE 80
 # Create volume for persistent data
 VOLUME /config
 
-# Start supervisor
+# Set entrypoint and default command
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
