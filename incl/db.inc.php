@@ -561,6 +561,24 @@ class DatabaseConnection {
         return $logs;
     }
 
+    /**
+     * Get barcode logs with IDs and limit
+     * @param int $limit Maximum number of logs to return
+     * @return array Array of logs with 'id' and 'log' fields
+     */
+    public function getLogsWithId(int $limit = 50): array {
+        $limit = max(1, min(200, $limit)); // Enforce min 1, max 200
+        $res  = $this->db->query("SELECT id, log FROM BarcodeLogs ORDER BY id DESC LIMIT $limit");
+        $logs = array();
+        while ($row = $res->fetchArray()) {
+            array_push($logs, array(
+                'id' => (int)$row['id'],
+                'log' => $row['log']
+            ));
+        }
+        return $logs;
+    }
+
 
     public function saveError(string $errorMessage, bool $isFatal = true): void {
         $verboseError = '<span style="color: red;">' . sanitizeString($errorMessage) . '</span> Please check your URL and API key in the settings menu!';

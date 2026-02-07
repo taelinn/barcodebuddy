@@ -81,11 +81,22 @@ class BBuddyApi {
         if (!$CONFIG->IS_DEBUG)
             error_reporting(0);
 
-        if (!isset($this->routes[$url])) {
-            self::sendResult(self::createResultArray(null, "API call not found", 404), 404);
-        } else {
+        // Try exact match first
+        if (isset($this->routes[$url])) {
             $this->routes[$url]->execute();
+            return;
         }
+
+        // Try pattern-based routes for parameterized paths
+        foreach ($this->routes as $route) {
+            if ($route->matches($url)) {
+                $route->execute($url);
+                return;
+            }
+        }
+
+        // No match found
+        self::sendResult(self::createResultArray(null, "API call not found", 404), 404);
     }
 
 
@@ -191,7 +202,10 @@ class BBuddyApi {
 
         $this->addRoute(new ApiRoute("/system/unknownbarcodes", function () {
             $barcodes = DatabaseConnection::getInstance()->getStoredBarcodes();
-            $unknownBarcodes = $barcodes["unknown"];
+
+            // Combine both known and unknown barcodes (both are "unresolved" - not linked to Grocy product yet)
+            // Exclude tare barcodes
+            $unresolvedBarcodes = array_merge($barcodes["known"], $barcodes["unknown"]);
 
             // Check if lookup parameter is set
             $doLookup = false;
@@ -199,11 +213,18 @@ class BBuddyApi {
                 $doLookup = true;
 
             return self::createResultArray(array(
-                "count" => count($unknownBarcodes),
+                "count" => count($unresolvedBarcodes),
                 "barcodes" => array_map(function($item) use ($doLookup) {
                     $result = array(
+                        "id" => (int)$item['id'],
                         "barcode" => $item['barcode'],
-                        "amount" => $item['amount']
+                        "amount" => (int)$item['amount'],
+                        "name" => $item['name'] === "N/A" ? null : $item['name'],
+                        "possibleMatch" => $item['match'] !== null ? (int)$item['match'] : null,
+                        "isLookedUp" => $item['name'] !== "N/A",
+                        "bestBeforeInDays" => $item['bestBeforeInDays'] !== null ? (int)$item['bestBeforeInDays'] : null,
+                        "price" => $item['price'],
+                        "altNames" => $item['bbServerAltNames']
                     );
 
                     if ($doLookup) {
@@ -211,7 +232,108 @@ class BBuddyApi {
                     }
 
                     return $result;
-                }, $unknownBarcodes)
+                }, $unresolvedBarcodes)
+            ));
+        }));
+
+        $this->addRoute(new ApiRoute("/system/unknownbarcodes/{id}", function ($id) {
+            // Validate ID is a positive integer
+            if (!is_numeric($id) || intval($id) <= 0) {
+                return self::createResultArray(null, "Invalid barcode ID: must be a positive integer", 400);
+            }
+
+            $id = intval($id);
+            $db = DatabaseConnection::getInstance();
+
+            // Check if barcode exists
+            $barcode = $db->getBarcodeById($id);
+            if (!$barcode) {
+                return self::createResultArray(null, "Barcode not found", 404);
+            }
+
+            // Delete the barcode
+            $db->deleteBarcode($id);
+
+            return self::createResultArray(array(
+                "deleted" => $id
+            ));
+        }, "DELETE"));
+
+        $this->addRoute(new ApiRoute("/system/unknownbarcodes/{id}/associate", function ($id) {
+            // Validate ID is a positive integer
+            if (!is_numeric($id) || intval($id) <= 0) {
+                return self::createResultArray(null, "Invalid barcode ID: must be a positive integer", 400);
+            }
+
+            $id = intval($id);
+
+            // Get productId from POST parameters
+            $productId = null;
+            if (isset($_POST["productId"])) {
+                $productId = $_POST["productId"];
+            }
+
+            // Validate productId
+            if ($productId === null || !is_numeric($productId) || intval($productId) <= 0) {
+                return self::createResultArray(null, "Invalid or missing productId: must be a positive integer", 400);
+            }
+
+            $productId = intval($productId);
+            $db = DatabaseConnection::getInstance();
+
+            // Check if barcode exists in BB database
+            $barcodeRecord = $db->getBarcodeById($id);
+            if (!$barcodeRecord) {
+                return self::createResultArray(null, "Barcode not found", 404);
+            }
+
+            $barcodeValue = $barcodeRecord['barcode'];
+
+            // Check if product exists in Grocy
+            try {
+                $grocyProduct = API::getProductInfo($productId);
+                if ($grocyProduct === null) {
+                    return self::createResultArray(null, "Grocy product not found with ID: $productId", 404);
+                }
+            } catch (Exception $e) {
+                return self::createResultArray(null, "Failed to verify Grocy product: " . $e->getMessage(), 500);
+            }
+
+            // Add barcode to Grocy product
+            try {
+                API::addBarcode($productId, $barcodeValue, null);
+            } catch (Exception $e) {
+                return self::createResultArray(null, "Failed to associate barcode with Grocy product: " . $e->getMessage(), 500);
+            }
+
+            // Delete from BB database on success
+            $db->deleteBarcode($id);
+
+            return self::createResultArray(array(
+                "associated" => true,
+                "barcodeId" => $id,
+                "barcode" => $barcodeValue,
+                "productId" => $productId
+            ));
+        }, "POST"));
+
+        $this->addRoute(new ApiRoute("/system/barcodelogs", function () {
+            // Get limit parameter from query string
+            $limit = 50; // default
+            if (isset($_GET["limit"])) {
+                if (is_numeric($_GET["limit"])) {
+                    $limit = intval($_GET["limit"]);
+                    // Enforce min 1, max 200
+                    $limit = max(1, min(200, $limit));
+                }
+            }
+
+            $db = DatabaseConnection::getInstance();
+            $logs = $db->getLogsWithId($limit);
+
+            return self::createResultArray(array(
+                "count" => count($logs),
+                "logs" => $logs
             ));
         }));
 
@@ -478,17 +600,48 @@ class ApiRoute {
 
     public $path;
     private $function;
+    private $pattern;
+    private $method;
 
     /**
-     * @param string $path API path
+     * @param string $path API path (can include {param} placeholders)
+     * @param callable $function Function to execute
+     * @param string|null $method HTTP method (GET, POST, DELETE, etc.) or null for any
      */
-    function __construct(string $path, $function) {
+    function __construct(string $path, $function, ?string $method = null) {
         $this->path     = '/api' . $path;
         $this->function = $function;
+        $this->method   = $method;
+
+        // Convert path with {param} to regex pattern
+        $this->pattern = preg_replace('/\{[^}]+\}/', '([^/]+)', $this->path);
+        $this->pattern = '#^' . $this->pattern . '$#';
     }
 
-    function execute(): void {
-        $result = $this->function->__invoke();
+    /**
+     * Check if this route matches the given URL
+     */
+    function matches(string $url): bool {
+        // Check HTTP method if specified
+        if ($this->method !== null && $_SERVER['REQUEST_METHOD'] !== $this->method) {
+            return false;
+        }
+
+        return preg_match($this->pattern, $url) === 1;
+    }
+
+    /**
+     * Extract parameters from URL based on pattern
+     */
+    function extractParams(string $url): array {
+        preg_match($this->pattern, $url, $matches);
+        array_shift($matches); // Remove full match
+        return $matches;
+    }
+
+    function execute(string $url = null): void {
+        $params = $url !== null ? $this->extractParams($url) : [];
+        $result = $this->function->__invoke(...$params);
         BBuddyApi::sendResult($result, $result["result"]["http_code"]);
     }
 }
