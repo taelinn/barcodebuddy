@@ -1,6 +1,16 @@
 FROM php:8.2-fpm-alpine
 
-# Install system dependencies and PHP extensions
+# Install build dependencies
+RUN apk add --no-cache --virtual .build-deps \
+    autoconf \
+    g++ \
+    make \
+    libpng-dev \
+    libjpeg-turbo-dev \
+    freetype-dev \
+    oniguruma-dev
+
+# Install runtime dependencies
 RUN apk add --no-cache \
     nginx \
     supervisor \
@@ -8,18 +18,19 @@ RUN apk add --no-cache \
     curl \
     wget \
     git \
-    libpng-dev \
-    libjpeg-turbo-dev \
-    freetype-dev \
-    oniguruma-dev \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    libpng \
+    libjpeg-turbo \
+    freetype
+
+# Install PHP extensions
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
         pdo_sqlite \
         mysqli \
         mbstring \
         gd \
         sockets \
-    && apk del --purge autoconf g++ make
+    && apk del --purge .build-deps
 
 # Create application directory
 RUN mkdir -p /var/www/html/data && \
