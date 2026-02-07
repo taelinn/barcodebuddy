@@ -40,9 +40,9 @@ RUN echo 'fastcgi_param  SCRIPT_FILENAME $document_root$fastcgi_script_name;' >>
     ln -sf /usr/bin/php81 /usr/bin/php
 
 # Create application directories and user
-RUN mkdir -p /app/bbuddy /config /data && \
+RUN mkdir -p /app/bbuddy /config && \
     adduser -D -h /config -s /bin/false barcodebuddy && \
-    chown -R barcodebuddy:barcodebuddy /app/bbuddy /config /data && \
+    chown -R barcodebuddy:barcodebuddy /app/bbuddy /config && \
     ln -s /config /data
 
 # Copy application files

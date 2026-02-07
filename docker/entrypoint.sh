@@ -13,7 +13,7 @@ usermod -o -u "$PUID" barcodebuddy
 
 # Fix ownership of directories
 echo "Fixing permissions..."
-chown -R barcodebuddy:barcodebuddy /config /data /app/bbuddy
+chown -R barcodebuddy:barcodebuddy /config /app/bbuddy
 
 # Execute supervisord
 exec "$@"
