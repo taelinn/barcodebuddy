@@ -42,11 +42,15 @@ RUN echo 'fastcgi_param  SCRIPT_FILENAME $document_root$fastcgi_script_name;' >>
 # Create application directories and user
 RUN mkdir -p /app/bbuddy /config && \
     adduser -D -h /config -s /bin/false barcodebuddy && \
-    chown -R barcodebuddy:barcodebuddy /app/bbuddy /config && \
-    ln -s /config /data
+    chown -R barcodebuddy:barcodebuddy /app/bbuddy /config
 
 # Copy application files
 COPY --chown=barcodebuddy:barcodebuddy . /app/bbuddy/
+
+# Create symlinks for data directory
+RUN rm -rf /app/bbuddy/data && \
+    ln -s /config /app/bbuddy/data && \
+    ln -s /config /data
 
 # Set Docker flag in config
 RUN sed -i 's/[[:blank:]]*const[[:blank:]]*IS_DOCKER[[:blank:]]*=[[:blank:]]*false;/const IS_DOCKER = true;/g' \
