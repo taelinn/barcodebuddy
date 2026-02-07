@@ -48,9 +48,12 @@ RUN mkdir -p /app/bbuddy /config && \
 COPY --chown=barcodebuddy:barcodebuddy . /app/bbuddy/
 
 # Create symlinks for data directory
-RUN rm -rf /app/bbuddy/data && \
-    ln -s /config /app/bbuddy/data && \
-    ln -s /config /data
+# Ensure /config/data exists and create symlink to it
+RUN mkdir -p /config/data && \
+    rm -rf /app/bbuddy/data && \
+    ln -s /config/data /app/bbuddy/data && \
+    ln -s /config/data /data && \
+    chown -R barcodebuddy:barcodebuddy /config
 
 # Set Docker flag in config
 RUN sed -i 's/[[:blank:]]*const[[:blank:]]*IS_DOCKER[[:blank:]]*=[[:blank:]]*false;/const IS_DOCKER = true;/g' \
