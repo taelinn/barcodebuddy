@@ -32,17 +32,19 @@ RUN apk add --no-cache \
     supervisor \
     tzdata
 
-# Configure PHP-FPM
+# Create application directories and user first
+RUN mkdir -p /app/bbuddy /config && \
+    adduser -D -h /config -s /bin/false barcodebuddy && \
+    chown -R barcodebuddy:barcodebuddy /app/bbuddy /config
+
+# Configure PHP-FPM to run as barcodebuddy user
 RUN echo 'fastcgi_param  SCRIPT_FILENAME $document_root$fastcgi_script_name;' >> \
     /etc/nginx/fastcgi_params && \
     rm -f /etc/nginx/http.d/default.conf && \
     sed -i 's/pm.max_children = 5/pm.max_children = 20/g' /etc/php81/php-fpm.d/www.conf && \
+    sed -i 's/^user = nobody$/user = barcodebuddy/g' /etc/php81/php-fpm.d/www.conf && \
+    sed -i 's/^group = nobody$/group = barcodebuddy/g' /etc/php81/php-fpm.d/www.conf && \
     ln -sf /usr/bin/php81 /usr/bin/php
-
-# Create application directories and user
-RUN mkdir -p /app/bbuddy /config && \
-    adduser -D -h /config -s /bin/false barcodebuddy && \
-    chown -R barcodebuddy:barcodebuddy /app/bbuddy /config
 
 # Copy application files
 COPY --chown=barcodebuddy:barcodebuddy . /app/bbuddy/
