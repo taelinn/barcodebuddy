@@ -15,5 +15,10 @@ usermod -o -u "$PUID" barcodebuddy
 echo "Fixing permissions..."
 chown -R barcodebuddy:barcodebuddy /config /app/bbuddy
 
+# Ensure write permissions on data directory
+echo "Ensuring write permissions..."
+chmod -R u+w /config/data 2>/dev/null || true
+chmod u+w /config/data/*.db 2>/dev/null || true
+
 # Execute supervisord
 exec "$@"
