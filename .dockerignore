@@ -1,0 +1,12 @@
+.git
+.github
+.gitignore
+.DS_Store
+README.md
+CLAUDE.md
+Docs/
+example/
+.dev/
+docker-compose.yml
+*.md
+.claude/
