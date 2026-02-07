@@ -8,7 +8,7 @@ services:
     ports:
       - "9280:80"
     volumes:
-      - ./data:/var/www/html/data
+      - ./config:/config
     environment:
       - TZ=UTC
       # Set these in .env file or uncomment and configure:
