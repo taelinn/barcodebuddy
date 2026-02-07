@@ -3,7 +3,7 @@ version: '3.8'
 services:
   barcodebuddy:
     build: .
-    container_name: barcodebuddy
+    container_name: barcodebuddy-gunhillpark
     restart: unless-stopped
     ports:
       - "9280:80"
