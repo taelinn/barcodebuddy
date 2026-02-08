@@ -16,17 +16,10 @@
  * @since      File available since Release 1.4
  */
 
-error_log("API DEBUG: Starting api/index.php");
-error_log("API DEBUG: Headers: " . json_encode(getallheaders()));
-
 require_once __DIR__ . "/../incl/configProcessing.inc.php";
-error_log("API DEBUG: After configProcessing");
 require_once __DIR__ . "/../incl/db.inc.php";
-error_log("API DEBUG: After db");
 require_once __DIR__ . "/../incl/processing.inc.php";
-error_log("API DEBUG: After processing");
 require_once __DIR__ . "/../incl/config.inc.php";
-error_log("API DEBUG: After config");
 
 //removes Get parameters
 $requestedUrl = strtok($_SERVER["REQUEST_URI"], '?');
