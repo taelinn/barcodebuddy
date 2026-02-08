@@ -50,22 +50,27 @@ class BBuddyApi {
     function checkIfAuthorized(): bool {
         global $CONFIG;
 
-        if ($CONFIG->checkIfAuthenticated(false))
-            return true;
-
+        // Check API key first to avoid loading authentication system
         $apiKey = "";
         if (isset($_SERVER["HTTP_BBUDDY_API_KEY"]))
             $apiKey = $_SERVER["HTTP_BBUDDY_API_KEY"];
         if (isset($_GET["apikey"]))
             $apiKey = $_GET["apikey"];
 
-        if ($apiKey == "")
-            self::sendUnauthorizedAndDie();
+        // If API key provided, validate it
+        if ($apiKey != "") {
+            if (DatabaseConnection::getInstance()->isValidApiKey($apiKey))
+                return true;
+            else
+                self::sendUnauthorizedAndDie();
+        }
 
-        if (DatabaseConnection::getInstance()->isValidApiKey($apiKey))
+        // Fall back to checking web authentication
+        if ($CONFIG->checkIfAuthenticated(false))
             return true;
-        else
-            self::sendUnauthorizedAndDie();
+
+        // No valid authentication found
+        self::sendUnauthorizedAndDie();
         return false;
     }
 
