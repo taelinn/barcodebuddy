@@ -57,19 +57,13 @@ class BBuddyApi {
         if (isset($_GET["apikey"]))
             $apiKey = $_GET["apikey"];
 
-        // If API key provided, validate it
-        if ($apiKey != "") {
-            if (DatabaseConnection::getInstance()->isValidApiKey($apiKey))
-                return true;
-            else
-                self::sendUnauthorizedAndDie();
+        // Validate API key - required for API access
+        if ($apiKey != "" && DatabaseConnection::getInstance()->isValidApiKey($apiKey)) {
+            return true;
         }
 
-        // Fall back to checking web authentication
-        if ($CONFIG->checkIfAuthenticated(false))
-            return true;
-
-        // No valid authentication found
+        // No valid API key - return 401 without checking web authentication
+        // This prevents loading the authentication library which causes redirects
         self::sendUnauthorizedAndDie();
         return false;
     }
